@@ -23,7 +23,7 @@
   if (!/^u_[A-Za-z0-9]{8,40}$/.test(id || '')) { id = 'u_' + rand(20); ls.set('rd.uid', id); }
   let name = ls.get('rd.name') || '';
 
-  const S = { ws: null, connected: false, peer: null, isHost: false, names: {}, peers: Object.freeze([]), vows: [], presence: {} };
+  const S = { round: null, ws: null, connected: false, peer: null, isHost: false, names: {}, peers: Object.freeze([]), vows: [], presence: {} };
   const L = { topics: new Map(), peers: new Set(), conn: new Set(), vows: new Set() };
   let readyResolve;
   const ready = new Promise(r => { readyResolve = r; });
@@ -108,12 +108,13 @@
       pending = m.pending || []; autoOn = !!m.auto;
       if (m.approved === false) { S.connected = false; showGate('wait'); readyResolve(); return; }
       hideGate(); if (S.isHost) renderPanel();
-      S.names = m.names || {}; S.vows = m.vows || [];
+      S.names = m.names || {}; S.vows = m.vows || []; S.round = m.round == null ? null : m.round;
       S.connected = true;
       if (Object.keys(S.presence).length) send({ t: 'presence', patch: S.presence });
       setPeers(m.peers || []); fireConn(); fireVows(); readyResolve();
     } else if (m.t === 'peers') setPeers(m.peers || []);
     else if (m.t === 'names') S.names = m.names || {};
+    else if (m.t === 'round') { S.round = m.round; }
     else if (m.t === 'vows') { S.vows = m.vows || []; fireVows(); }
     else if (m.t === 'msg') {
       const set = L.topics.get(m.topic); if (!set) return;
@@ -163,6 +164,7 @@
   }
   const db = {
     resetBoard() { return send({ t: 'resetboard' }); },
+    round() { return S.round; },
     collection() {
       const ref = {
         limit() { return ref; },

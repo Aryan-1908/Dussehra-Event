@@ -47,6 +47,7 @@ names: dict = _saved.get("names", {})
 approved: set = set(_saved.get("approved", []))
 rejected: set = set()
 auto = {"on": os.environ.get("AUTO_APPROVE") == "1"}
+round_no = {"n": int(_saved.get("round", 1))}
 clients: dict = {}  # ws -> client info
 
 HEAD = (
@@ -61,7 +62,7 @@ HEAD = (
 
 def save_state():
     tmp = STATE_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"vows": vows, "names": names, "approved": sorted(approved)}))
+    tmp.write_text(json.dumps({"vows": vows, "names": names, "approved": sorted(approved), "round": round_no["n"]}))
     tmp.replace(STATE_FILE)
 
 
@@ -85,6 +86,8 @@ def clean_vow(d):
         "bestArrows": num("bestArrows", 1, 10000),
         "bestSec": num("bestSec", 1, 100000),
         "bestMs": num("bestMs", 500, 3600000),
+        "heads": num("heads", 0, 10),
+        "timedOut": bool(d.get("timedOut")),
         "updatedAt": int(time.time() * 1000),
     }
 
@@ -127,7 +130,7 @@ def welcome(c):
     full = c["approved"]
     return {"t": "welcome", "peer": c["peer"], "id": c["id"], "isHost": c["host"], "approved": full,
             "names": names if full else {}, "vows": vows_list() if full else [], "peers": peers_list() if full else [],
-            "pending": pending_list() if c["host"] else [], "auto": auto["on"]}
+            "pending": pending_list() if c["host"] else [], "auto": auto["on"], "round": round_no["n"]}
 
 
 async def admit(ws, c):
@@ -221,8 +224,10 @@ async def handle(ws, c, m):
     elif t == "resetboard":
         if c["host"]:
             for v in vows.values():
-                v.update({"burns": 0, "bestArrows": None, "bestSec": None, "bestMs": None})
+                v.update({"burns": 0, "bestArrows": None, "bestSec": None, "bestMs": None, "heads": None, "timedOut": False})
+            round_no["n"] += 1
             save_state()
+            await broadcast({"t": "round", "round": round_no["n"]})
             await broadcast({"t": "vows", "vows": vows_list()})
     elif t == "vow":
         v = clean_vow(m.get("data"))

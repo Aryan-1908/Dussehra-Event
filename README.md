@@ -25,6 +25,13 @@ Without Docker: `pip install aiohttp==3.9.5 && HOST_KEY=choose-a-long-secret POR
 - Players: `http://<public-ip>/`
 - Host: `http://<public-ip>/?host=<HOST_KEY>` (keep private)
 
+## How a game works
+
+- Every player gets **one game of 5 minutes**; the clock starts when they press **Pick up the bow**.
+- Finishing (burning Ravan) ranks by fastest time. Players who run out of time are ranked after the finishers, by most heads down.
+- A refresh resumes the game in progress, and a finished player sees their result instead of a replay.
+- To run a fresh round (for example after testing), the host presses **New round (clear leaderboard)**. Every browser then resets itself.
+
 ## Event day
 
 1. Open the host link first and keep it open. The entry panel is at the bottom-left.

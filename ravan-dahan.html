@@ -94,7 +94,11 @@ kbd { font: 600 12px var(--font-body); border: 1px solid var(--line); border-bot
 /* live show: host big screen */
 .arena { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
 .board h3 { margin: 0; }
-.board ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 480px; overflow-y: auto; }
+.board ol { list-style: none; margin: 0; padding: 0 4px 0 0; display: grid; gap: 6px; max-height: 318px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--night-3) transparent; }
+.board li { flex: none; }
+.board .myrank { font-weight: 600; font-size: 14px; color: var(--marigold); background: var(--night); border: 1px solid rgba(244, 165, 36, .5); border-radius: 8px; padding: 6px 10px; }
+button.chant { background: var(--marigold); color: var(--night); }
+#winNote { margin: 0; color: var(--ash); }
 .board li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 9px; border-radius: 8px; background: var(--night); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .board li.me { border-color: rgba(244, 165, 36, .65); }
 .board li.live { opacity: .8; border-style: dashed; }
@@ -174,8 +178,7 @@ body.crowdmode header.top .tools, body.crowdmode .arena, body.crowdmode .vices, 
   </div>
   <div class="tools">
     <span class="pill" id="roomPill"><span class="dot"></span><span id="roomText">Playing solo</span></span>
-    <button class="ghost" id="btnSound" aria-pressed="true">Sound on</button>
-    <button class="ghost" id="btnDhol" aria-pressed="true">Dhol on</button>
+    <button class="chant" id="btnCheer">Jai Shri Ram!</button>
   </div>
 </header>
 
@@ -186,7 +189,7 @@ body.crowdmode header.top .tools, body.crowdmode .arena, body.crowdmode .vices, 
     <div class="overlay" id="startOv">
       <div class="card-pop">
         <h2>The Ramlila ground is ready</h2>
-        <p>Ravan stands with ten heads, one for each vice. Pull the bow, bring the heads down, then strike the navel where his amrit is hidden.</p>
+        <p>Ravan stands with ten heads, one for each vice. Pull the bow, bring the heads down, then strike the navel where his amrit is hidden. You have 5 minutes, and the clock starts when you press the button.</p>
         <div class="row"><button class="fire" id="btnStart">Pick up the bow</button></div>
         <p class="hint">Drag back and release to shoot. Keyboard: <kbd>←</kbd><kbd>→</kbd> angle, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>Space</kbd> shoot.</p>
       </div>
@@ -197,11 +200,12 @@ body.crowdmode header.top .tools, body.crowdmode .arena, body.crowdmode .vices, 
         <div class="stats">
           <div><b id="winArrows">0</b><span id="winL1">Arrows</span></div>
           <div><b id="winTime">0s</b><span id="winL2">Time</span></div>
-          <div><b id="winBurns">1</b><span id="winL3">Your burns</span></div>
+          <div><b id="winBurns">–</b><span id="winL3">Your rank</span></div>
         </div>
         <p class="burned" id="winVow" hidden></p>
+        <p id="winNote" hidden></p>
         <div class="row">
-          <button class="fire" id="btnAgain">Build a new Ravan</button>
+          <button class="fire" id="btnAgain" hidden>Build a new Ravan</button>
           <button class="ghost" id="btnCheer2">Jai Shri Ram!</button>
         </div>
       </div>
@@ -248,7 +252,8 @@ body.crowdmode header.top .tools, body.crowdmode .arena, body.crowdmode .vices, 
 
   <aside class="panel board" id="board">
     <h3>Leaderboard</h3>
-    <p class="hint">Fastest to burn Ravan ranks first. Dashed rows are still playing.</p>
+    <p class="hint">Fastest to burn Ravan ranks first. After that, more heads down ranks higher. Dashed rows are still playing.</p>
+    <div class="myrank" id="myRank" hidden></div>
     <ol id="boardList"></ol>
     <div class="empty" id="boardEmpty">Nobody has finished yet. Be the first to burn Ravan.</div>
   </aside>
@@ -292,13 +297,6 @@ body.crowdmode header.top .tools, body.crowdmode .arena, body.crowdmode .vices, 
         <button type="submit">Write it on Ravan</button>
       </form>
       <p class="hint" id="vowNote">Your vow appears on the team wall, so everyone who opens this page can read it.</p>
-      <div class="label">Gameplay</div>
-      <div class="controls">
-        <button class="ghost" id="btnMaya" aria-pressed="false">Maya mode: off</button>
-        <button class="ghost" id="btnCheer">Jai Shri Ram!</button>
-        <button class="ghost" id="btnReset">Reset effigy</button>
-      </div>
-      <p class="hint">Maya mode follows the Ramayana: a fallen head grows back after 9 seconds, so you have to be quick.</p>
       <div id="hostBox" hidden>
         <div class="label">Host</div>
         <div class="controls" style="margin-top:8px">
@@ -369,16 +367,23 @@ const store = {
 };
 
 /* ---------- audio (all synthesized) ---------- */
-const A = { ctx: null, master: null, dholBus: null, noise: null, on: store.get('rd.sound', true), dhol: store.get('rd.dhol', true), step: 0, next: 0, timer: null };
+const A = { ctx: null, master: null, dholBus: null, rev: null, noise: null, step: 0, next: 0, timer: null };
 function audioInit() {
   if (A.ctx) { if (A.ctx.state === 'suspended') A.ctx.resume(); return; }
   const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
   A.ctx = new C();
-  A.master = A.ctx.createGain(); A.master.gain.value = A.on ? 0.8 : 0; A.master.connect(A.ctx.destination);
-  A.dholBus = A.ctx.createGain(); A.dholBus.gain.value = A.dhol ? 0.55 : 0; A.dholBus.connect(A.master);
+  // everything passes through a limiter so overlapping sounds (chant, dhol, bells) never distort
+  const lim = A.ctx.createDynamicsCompressor(); lim.threshold.value = -16; lim.knee.value = 18; lim.ratio.value = 8; lim.attack.value = 0.004; lim.release.value = 0.25; lim.connect(A.ctx.destination);
+  A.master = A.ctx.createGain(); A.master.gain.value = 0.8; A.master.connect(lim);
+  A.dholBus = A.ctx.createGain(); A.dholBus.gain.value = 0.5; A.dholBus.connect(A.master);
   const len = A.ctx.sampleRate * 2, b = A.ctx.createBuffer(1, len, A.ctx.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   A.noise = b;
+  // temple-hall reverb: decaying noise as an impulse response, used by bells, the drone and the chant
+  const rl = Math.floor(A.ctx.sampleRate * 2.8), ib = A.ctx.createBuffer(2, rl, A.ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const dd = ib.getChannelData(ch); for (let i = 0; i < rl; i++) dd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / rl, 2.6); }
+  const cv2 = A.ctx.createConvolver(); cv2.buffer = ib; const wet = A.ctx.createGain(); wet.gain.value = 0.7;
+  cv2.connect(wet).connect(A.master); A.rev = cv2;
   A.next = A.ctx.currentTime + 0.1;
   A.timer = setInterval(dholTick, 50);
 }
@@ -420,7 +425,56 @@ const sfx = {
     });
     f.connect(g).connect(A.master); lfo.start(t); lfo.stop(t + 2.9);
   },
-  whistle() { if (!A.ctx) return; tone('sine', 700, 2300, A.ctx.currentTime, 0.8, 0.04); },
+  whistle() { if (!A.ctx) return; tone('sine', 700, 2300, A.ctx.currentTime, 0.8, 0.02); },
+  // temple bell: inharmonic partials with a long decay, sent through the hall reverb
+  bell(vol, base, delay) {
+    if (!A.ctx) return; const c = A.ctx, t = c.currentTime + (delay || 0); base = base || 392;
+    const g = c.createGain(); g.gain.value = vol || 0.3; g.connect(A.master); g.connect(A.rev);
+    [[1, 1, 5], [2.01, 0.5, 3.6], [2.76, 0.35, 2.6], [4.17, 0.2, 1.8], [5.43, 0.12, 1.2]].forEach(([r, a, d]) => {
+      const o = c.createOscillator(), e = c.createGain(); o.type = 'sine'; o.frequency.value = base * r;
+      e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(a, t + 0.006); e.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(e).connect(g); o.start(t); o.stop(t + d + 0.1);
+    });
+  },
+  // Om drone: a low swell that rises, holds and fades
+  om(dur) {
+    if (!A.ctx) return; const c = A.ctx, t = c.currentTime;
+    const g = c.createGain(), f = c.createBiquadFilter(), lfo = c.createOscillator(), lg = c.createGain();
+    f.type = 'lowpass'; f.frequency.value = 520; f.Q.value = 1.2; lfo.frequency.value = 0.35; lg.gain.value = 160; lfo.connect(lg).connect(f.frequency);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.2, t + 2.5); g.gain.setValueAtTime(0.2, t + dur - 2.5); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    [[136.1, 'sawtooth', 1], [272.2, 'sine', 0.6], [204.2, 'triangle', 0.45], [68, 'sine', 0.9]].forEach(([fr, ty, v]) => {
+      const o = c.createOscillator(), og = c.createGain(); o.type = ty; o.frequency.value = fr; og.gain.value = v; o.connect(og).connect(f); o.start(t); o.stop(t + dur + 0.1);
+    });
+    f.connect(g); g.connect(A.master); g.connect(A.rev); lfo.start(t); lfo.stop(t + dur + 0.1);
+  },
+  // soft choir-like pad on a major chord
+  pad(dur) {
+    if (!A.ctx) return; const c = A.ctx, t = c.currentTime;
+    const g = c.createGain(), f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1700;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.075, t + 2.2); g.gain.setValueAtTime(0.075, t + dur - 2.8); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    [293.7, 370, 440, 587.3, 740].forEach((fr, i) => {
+      const o = c.createOscillator(), l = c.createOscillator(), lgn = c.createGain(); o.type = 'triangle'; o.frequency.value = fr; o.detune.value = (i % 2 ? 6 : -6);
+      l.frequency.value = 4.8 + i * 0.3; lgn.gain.value = 5; l.connect(lgn).connect(o.detune); o.connect(f); o.start(t); l.start(t); o.stop(t + dur + 0.1); l.stop(t + dur + 0.1);
+    });
+    f.connect(g); g.connect(A.master); g.connect(A.rev);
+  },
+  // gentle bell sparkles on a pentatonic scale
+  sparkle(delay) {
+    if (!A.ctx) return; const c = A.ctx, S = [1046.5, 1174.7, 1318.5, 1568, 1760, 2093];
+    for (let k = 0; k < 4; k++) {
+      const t = c.currentTime + (delay || 0) + k * 0.09 + Math.random() * 0.04, o = c.createOscillator(), e = c.createGain();
+      o.type = 'sine'; o.frequency.value = S[Math.random() * S.length | 0];
+      e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(0.05, t + 0.01); e.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+      o.connect(e); e.connect(A.master); e.connect(A.rev); o.start(t); o.stop(t + 1.6);
+    }
+  },
+  // the sound of Ravan burning: conch, Om, choir pad, temple bells, rising sparkles
+  divine() {
+    if (!A.ctx) return;
+    sfx.conch(); sfx.om(11); sfx.pad(11);
+    [[1.6, 0.34, 392], [3.8, 0.3, 523], [6.2, 0.3, 392], [8.6, 0.36, 294]].forEach(([d, v, f]) => sfx.bell(v, f, d));
+    [2.4, 4.4, 6.6, 8.2, 9.4].forEach(d => sfx.sparkle(d));
+  },
   boom() {
     if (!A.ctx) return; const t = A.ctx.currentTime;
     hiss(t, 1.1, 0.55, 'lowpass', 1000, 120); tone('sine', 85, 30, t, 0.6, 0.55);
@@ -441,15 +495,12 @@ function dholTick() {
     A.step++; A.next += stepDur;
   }
 }
-function setSound(on) {
-  A.on = on; store.set('rd.sound', on);
-  if (A.master) A.master.gain.setTargetAtTime(on ? 0.8 : 0, A.ctx.currentTime, 0.05);
-  $('btnSound').setAttribute('aria-pressed', on); $('btnSound').textContent = on ? 'Sound on' : 'Sound off';
-}
-function setDhol(on) {
-  A.dhol = on; store.set('rd.dhol', on);
-  if (A.dholBus) A.dholBus.gain.setTargetAtTime(on ? 0.55 : 0, A.ctx.currentTime, 0.05);
-  $('btnDhol').setAttribute('aria-pressed', on); $('btnDhol').textContent = on ? 'Dhol on' : 'Dhol off';
+/* "Jai Shri Ram": spoken in a Hindi voice when the device has one, otherwise sung by the synth above. Short cooldown so many taps do not pile up. */
+let chantUntil = 0;
+/* "Jai Shri Ram!" button: a single struck temple bell. */
+function chant() {
+  audioInit(); if (!A.ctx || Date.now() < chantUntil) return; chantUntil = Date.now() + 1200;
+  sfx.bell(0.6, 349, 0);
 }
 
 /* ---------- scene data ---------- */
@@ -463,6 +514,8 @@ let shots = 0, startTime = 0, startWall = 0, endTime = 0, wind = 0, maya = false
 let aim = { active: false, sx: 0, sy: 0, angle: -0.72, power: 0.68, kb: false };
 let taunt = null, burnT = 0, nextRocket = 0, collective = false;
 let vow = store.get('rd.vow', '');
+const LIMIT = 5 * 60 * 1000;   // each player has 5 minutes
+let finalRec = null, finalSynced = false, hostMode = false, winRankMode = false;
 const TEAMS = { ram: { name: 'Team Ram', color: '#6aa8ff' }, hanuman: { name: 'Team Hanuman', color: '#f08a1c' } };
 const show = { on: false, phase: 'lobby', per: 40, shakti: { ram: 0, hanuman: 0 }, heads: { ram: 0, hanuman: 0 }, taps: {}, quiz: null, qi: 0, winner: null, lastReact: {}, timer: 0, tick: 0 };
 const cr = { on: false, dismissed: false, team: store.get('rd.team', null), pending: 0, mine: 0, st: null, last: 0, answered: null };
@@ -478,7 +531,7 @@ function makeHeads() {
 function newWind() { wind = show.on ? 0 : Math.round((Math.random() * 2 - 1) * 45); }
 function reset() {
   makeHeads(); arrows = []; parts = []; rockets = []; floats = []; taunt = null;
-  shots = 0; startTime = 0; startWall = 0; endTime = 0; burnT = 0; collective = false; newWind();
+  shots = 0; startTime = performance.now(); startWall = Date.now(); endTime = 0; burnT = 0; collective = false; newWind();
   state = 'play'; $('winOv').hidden = true; renderVices();
 }
 
@@ -493,13 +546,46 @@ VICES.forEach(([h, e], i) => {
 function saveGame() {
   if (show.on) return;
   if (state === 'play' || state === 'navel') store.set('rd.game', { alive: heads.map(h => h.alive), shots, startWall, state, at: Date.now() });
-  else if (state === 'burn' || state === 'done') store.set('rd.game', null);
+  else if (state === 'burn' || state === 'done' || state === 'over') store.set('rd.game', null);
+}
+const clock = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const fmtMs = ms => { const s = ms / 1000; return s < 60 ? s.toFixed(1) + 's' : Math.floor(s / 60) + 'm ' + String(Math.round(s % 60)).padStart(2, '0') + 's'; };
+function setWinStats(l1, v1, l2, v2, l3, v3) {
+  $('winL1').textContent = l1; $('winArrows').textContent = v1; $('winL2').textContent = l2; $('winTime').textContent = v2; $('winL3').textContent = l3; $('winBurns').textContent = v3;
+}
+/* Final screen for a solo player: finished (kind "win") or ran out of time (kind "timeup"). */
+function showOver(kind, r) {
+  r = r || finalRec; winRankMode = true;
+  $('btnAgain').hidden = !(show.on || hostMode);
+  if (kind === 'win') {
+    $('winTitle').textContent = 'Ravan is burning. Satya ki jeet!';
+    setWinStats('Arrows', r.shots, 'Time', fmtMs(r.ms), 'Your rank', '…');
+    $('winNote').hidden = true;
+    if (vow) { $('winVow').hidden = false; $('winVow').textContent = 'You burned "' + vow + '" along with him.'; } else $('winVow').hidden = true;
+  } else {
+    $('winTitle').textContent = 'Time is up!';
+    setWinStats('Heads down', r.heads + '/10', 'Arrows', r.shots, 'Your rank', '…');
+    $('winNote').hidden = false; $('winNote').textContent = 'Ravan survived this time. Your heads are counted on the leaderboard.';
+    $('winVow').hidden = true;
+  }
+  $('winOv').hidden = false; scheduleBoard();
+}
+function timeUp() {
+  if (state !== 'play' && state !== 'navel') return;
+  endTime = performance.now(); arrows = []; aim.active = false;
+  const down = heads.filter(h => !h.alive).length;
+  state = 'over'; saveGame();
+  finalRec = { kind: 'timeup', ms: LIMIT, shots, heads: down, alive: heads.map(h => h.alive), round: db && db.round ? db.round() : null };
+  store.set('rd.done', finalRec);
+  if (room) room.presence({ heads: null }).catch(() => {});
+  sfx.bell(0.4, 196, 0); sfx.laugh(); sayTaunt('Ha ha ha! Time is up, little archer!');
+  saveMine(finalRec); showOver('timeup');
 }
 function renderVices() {
   heads.forEach(h => $('vice' + h.i).classList.toggle('gone', !h.alive));
   saveGame();
   if (state === 'ready' || show.on || state === 'burn' || state === 'done') return;
-  if (room) room.presence({ heads: heads.filter(h => !h.alive).length }).catch(() => {});
+  if (room) room.presence({ heads: heads.filter(h => !h.alive).length, shots }).catch(() => {});
 }
 
 let toastTimer = 0;
@@ -595,22 +681,23 @@ function stepArrow(a, dt) {
 
 function win() {
   endTime = performance.now();
-  const sec = Math.max(1, Math.round((endTime - startTime) / 1000));
-  const ms = Math.max(500, Math.round(endTime - startTime));
+  const ms = Math.max(500, Math.min(LIMIT, Math.round(endTime - startTime)));
   if (room) room.presence({ heads: null }).catch(() => {});
-  myBurns++; if (myBest == null || shots < myBest) myBest = shots; if (myBestSec == null || sec < myBestSec) myBestSec = sec;
-  store.set('rd.burns', myBurns); store.set('rd.best', myBest); store.set('rd.bestSec', myBestSec);
+  finalRec = { kind: 'win', ms, shots, heads: 10, alive: heads.map(h => h.alive), round: db && db.round ? db.round() : null };
+  store.set('rd.done', finalRec);
+  // the final stats are filled in now; the screen itself appears when the burning ends (see burnStep)
+  winRankMode = true; $('btnAgain').hidden = !(show.on || hostMode);
   $('winTitle').textContent = 'Ravan is burning. Satya ki jeet!';
-  $('winL1').textContent = 'Arrows'; $('winL2').textContent = 'Time'; $('winL3').textContent = 'Your burns';
-  $('winArrows').textContent = shots; $('winTime').textContent = sec + 's'; $('winBurns').textContent = myBurns;
+  setWinStats('Arrows', shots, 'Time', fmtMs(ms), 'Your rank', '…');
+  $('winNote').hidden = true;
   if (vow) { $('winVow').hidden = false; $('winVow').textContent = 'You burned "' + vow + '" along with him.'; } else $('winVow').hidden = true;
   startBurn(false);
-  saveMine(ms);
+  saveMine(finalRec);
 }
 
 function startBurn(isTeam, msg) {
   collective = isTeam; state = 'burn'; burnT = 0; nextRocket = 0.6; taunt = null; aim.active = false; saveGame();
-  audioInit(); sfx.conch();
+  audioInit(); sfx.divine();
   if (isTeam) { arrows = []; toast(msg || 'The team Ravan is burning on every screen. Happy Dussehra!', 5000); }
 }
 
@@ -627,10 +714,10 @@ function launchRocket() { rockets.push({ x: 160 + Math.random() * 760, y: GROUND
 function burst(r) {
   const n = RM ? 40 : 80, c2 = FW[Math.random() * FW.length | 0];
   for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2, s = 120 + Math.random() * 90; parts.push({ k: 'fw', x: r.x, y: r.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1.2 + Math.random() * 0.6, max: 1.8, size: 2.2, c: i % 3 ? r.c : c2 }); }
-  sfx.boom();
+  sfx.sparkle();
 }
 function cheerLocal() {
-  audioInit(); sfx.chime();
+  audioInit(); chant();
   spawnPetals(RM ? 20 : 45);
   floatText('Jai Shri Ram!', W / 2, 110, '#fff3c4');
 }
@@ -777,11 +864,16 @@ function drawAimPreview() {
 }
 function drawHUD() {
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(13,9,32,.55)'; roundRect(12, 12, 250, 56, 8); ctx.fill();
+  ctx.fillStyle = 'rgba(13,9,32,.55)'; roundRect(12, 12, 262, 56, 8); ctx.fill();
   ctx.fillStyle = '#f4ead7'; ctx.font = '600 15px Hind, sans-serif';
-  const sec = startTime ? Math.round(((endTime || performance.now()) - startTime) / 1000) : 0;
-  const left = heads.filter(h => h.alive).length;
-  ctx.fillText('Arrows ' + shots + '   ·   ' + sec + 's   ·   Heads ' + left + '/10', 24, 20);
+  const elapsed = startTime ? (endTime || performance.now()) - startTime : 0;
+  const down = heads.filter(h => !h.alive).length;
+  ctx.fillText('Arrows ' + shots + '  ·  Heads ' + down + '/10', 24, 20);
+  const remaining = LIMIT - elapsed, urgent = !show.on && remaining < 60000 && state !== 'burn' && state !== 'done';
+  ctx.save(); ctx.textAlign = 'right'; ctx.font = '700 16px Hind, sans-serif';
+  ctx.fillStyle = urgent && Math.floor(performance.now() / 500) % 2 ? '#ff6a3a' : urgent ? '#ffb199' : '#f4a524';
+  ctx.fillText(show.on ? clock(elapsed) : clock(remaining), 266, 19);
+  ctx.restore(); ctx.textAlign = 'left';
   ctx.fillStyle = '#b3a8c4'; ctx.font = '500 13px Hind, sans-serif';
   ctx.fillText('Wind', 24, 44);
   const wx = 70, wy = 51, len = Math.abs(wind) * 1.6;
@@ -857,22 +949,21 @@ function burnStep(dt) {
   }
   if (burnT < 9 && Math.random() < 0.35) sfx.crackle();
   if (burnT > nextRocket && burnT < 10) { launchRocket(); nextRocket += 0.5 + Math.random() * 0.5; }
-  if (burnT > 4.2 && burnT - dt <= 4.2) { arrows = arrows.filter(a => a.on !== 'body'); sparks(RX, 300, 60, ['#ffd27a', '#e8562a', '#f4a524']); sfx.boom(); }
+  if (burnT > 4.2 && burnT - dt <= 4.2) { arrows = arrows.filter(a => a.on !== 'body'); sparks(RX, 300, 60, ['#ffd27a', '#e8562a', '#f4a524']); sfx.bell(0.45, 196, 0); }
   if (state === 'burn' && burnT > 6.6) {
     state = 'done';
     if (show.on && show.winner) {
+      winRankMode = false; $('winNote').hidden = true; $('btnAgain').hidden = false;
       $('winTitle').textContent = TEAMS[show.winner].name + ' burned Ravan!';
-      $('winL1').textContent = 'Ram heads'; $('winArrows').textContent = show.heads.ram;
-      $('winL2').textContent = 'Hanuman heads'; $('winTime').textContent = show.heads.hanuman;
-      $('winL3').textContent = 'Arrows'; $('winBurns').textContent = shots;
+      setWinStats('Ram heads', show.heads.ram, 'Hanuman heads', show.heads.hanuman, 'Arrows', shots);
       $('winVow').hidden = true;
     } else if (collective) {
-      $('winL1').textContent = 'Arrows'; $('winL2').textContent = 'Time'; $('winL3').textContent = 'Your burns';
+      winRankMode = false; $('winNote').hidden = true; $('btnAgain').hidden = !hostMode;
       $('winTitle').textContent = 'The team Ravan has fallen. Happy Dussehra!';
-      $('winArrows').textContent = '–'; $('winTime').textContent = '–'; $('winBurns').textContent = myBurns;
+      setWinStats('Arrows', '–', 'Time', '–', 'Players', '–');
       $('winVow').hidden = !vow; if (vow) $('winVow').textContent = 'Your vow "' + vow + '" burned with the team.';
     }
-    $('winOv').hidden = false;
+    $('winOv').hidden = false; scheduleBoard();
   }
 }
 
@@ -901,7 +992,7 @@ function frame(now) {
   ctx.clearRect(0, 0, W, H);
   drawSky(t);
   if (state === 'burn' || state === 'done') burnStep(dt);
-  mayaStep();
+  if (!show.on && (state === 'play' || state === 'navel') && startWall && Date.now() - startWall >= LIMIT) timeUp();
   drawRavan(t);
   drawFallenHeads(dt);
   for (const a of arrows) if (!a.stuck) stepArrow(a, dt);
@@ -918,24 +1009,28 @@ makeHeads(); newWind(); renderVices(); fit();
 requestAnimationFrame(frame);
 
 /* ---------- buttons ---------- */
-setSound(A.on); setDhol(A.dhol);
 $('btnStart').onclick = begin;
-$('btnAgain').onclick = () => { if (show.on) startBattle(); else reset(); cv.focus(); };
-$('btnReset').onclick = () => { audioInit(); $('startOv').hidden = true; reset(); };
-$('btnSound').onclick = () => { audioInit(); setSound(!A.on); };
-$('btnDhol').onclick = () => { audioInit(); setDhol(!A.dhol); };
-$('btnMaya').onclick = () => { maya = !maya; $('btnMaya').setAttribute('aria-pressed', maya); $('btnMaya').textContent = 'Maya mode: ' + (maya ? 'on' : 'off'); if (maya) heads.forEach(h => { if (!h.alive) h.downAt = performance.now(); }); };
+// only the host (or the live show) can start a fresh Ravan; players get one game
+$('btnAgain').onclick = () => {
+  if (show.on) { startBattle(); cv.focus(); return; }
+  store.set('rd.done', null); store.set('rd.game', null); finalRec = null; winRankMode = false; $('winNote').hidden = true; reset(); cv.focus();
+};
 $('vowInput').value = vow;
 
 /* ---------- shared features: db (team wall), room (cheers, team dahan) ---------- */
 const use = n => (window.claude && window.claude.use) ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
 let db = null, user = null, room = null, uid = null, myDoc = null, wallDocs = [], canWrite = true, writeChain = Promise.resolve();
 
-function saveMine(ms) {
+/* Writes this player's row on the leaderboard. `r` is the final result (win or time-up); without it only the vow changes. */
+function saveMine(r) {
   if (!db || !uid || !canWrite) return;
   const cur = wallDocs.find(d => d.id === uid) || {};
-  const bestMs = ms ? (cur.bestMs ? Math.min(cur.bestMs, ms) : ms) : (cur.bestMs || null);
-  const body = { vow: vow || '', burns: ms ? Math.max(myBurns, cur.burns || 0) : (cur.burns || 0), bestArrows: ms ? myBest : (cur.bestArrows || null), bestSec: ms ? myBestSec : (cur.bestSec || null), bestMs, updatedAt: Date.now() };
+  const win = r && r.kind === 'win';
+  const body = {
+    vow: vow || '', burns: win ? 1 : (cur.burns || 0),
+    bestArrows: r ? r.shots : (cur.bestArrows || null), bestSec: win ? Math.round(r.ms / 1000) : (cur.bestSec || null),
+    bestMs: win ? r.ms : (cur.bestMs || null), heads: r ? r.heads : (cur.heads ?? null), timedOut: r ? r.kind === 'timeup' : !!cur.timedOut, updatedAt: Date.now()
+  };
   writeChain = writeChain.then(() => db.collection('vows').doc(uid).set(body)).catch(e => {
     if (e && e.code === 'invalid_argument') { canWrite = false; $('vowNote').textContent = 'You can play, but your access to this page does not allow posting to the team wall.'; }
   });
@@ -947,11 +1042,7 @@ $('vowForm').addEventListener('submit', e => {
   saveMine();
 });
 
-function cheer() {
-  if (room && room.connected()) room.emit('cheer', { at: Date.now() }).catch(() => cheerLocal());
-  else cheerLocal();
-}
-$('btnCheer').onclick = cheer; $('btnCheer2').onclick = cheer;
+$('btnCheer').onclick = cheerLocal; $('btnCheer2').onclick = cheerLocal;
 $('btnTeamDahan').onclick = () => {
   if (room && room.connected()) room.emit('dahan', { at: Date.now() }).catch(() => startBurnTeam());
   else startBurnTeam();
@@ -960,28 +1051,38 @@ function startBurnTeam() { $('startOv').hidden = true; $('winOv').hidden = true;
 
 let boardTimer = 0;
 function scheduleBoard() { clearTimeout(boardTimer); boardTimer = setTimeout(renderBoard, 250); }
-const fmtMs = ms => { const s = ms / 1000; return s < 60 ? s.toFixed(1) + 's' : Math.floor(s / 60) + 'm ' + String(Math.round(s % 60)).padStart(2, '0') + 's'; };
+/* One ranking for everyone: finishers by fastest time, then everybody else by most heads down (fewer arrows breaks ties). */
 async function renderBoard() {
-  const done = wallDocs.filter(d => d.bestMs).sort((a, b) => a.bestMs - b.bestMs || (a.bestArrows || 999) - (b.bestArrows || 999));
-  const doneIds = new Set(done.map(d => d.id));
-  const live = room ? room.peers().filter(p => p.by && p.presence && typeof p.presence.heads === 'number' && !doneIds.has(p.by))
-    .reduce((m, p) => (m.has(p.by) ? m : m.set(p.by, p.presence.heads)), new Map()) : new Map();
-  const ids = [...done.map(d => d.id), ...live.keys()];
-  const ps = user && ids.length ? await user.profiles(ids) : {};
+  const rows = new Map();
+  wallDocs.forEach(d => {
+    if (d.bestMs) rows.set(d.id, { id: d.id, kind: 'done', ms: d.bestMs, heads: 10, shots: d.bestArrows || 999 });
+    else if (d.timedOut || d.heads != null) rows.set(d.id, { id: d.id, kind: 'timeup', heads: d.heads || 0, shots: d.bestArrows || 999 });
+  });
+  if (room) room.peers().forEach(p => {
+    const h = p.presence && p.presence.heads;
+    if (!p.by || rows.has(p.by) || typeof h !== 'number') return;
+    rows.set(p.by, { id: p.by, kind: 'live', heads: h, shots: p.presence.shots | 0 });
+  });
+  const list = [...rows.values()].sort((a, b) => (a.kind === 'done') !== (b.kind === 'done') ? (a.kind === 'done' ? -1 : 1)
+    : a.kind === 'done' ? a.ms - b.ms || a.shots - b.shots : b.heads - a.heads || a.shots - b.shots).slice(0, 300);
+  const ps = user && list.length ? await user.profiles(list.map(r => r.id)) : {};
   const ol = $('boardList'); ol.textContent = '';
-  $('boardEmpty').hidden = ids.length > 0;
-  const row = (rk, id, sub, right, cls, bar) => {
-    const li = document.createElement('li'); li.className = cls + (id === uid ? ' me' : '');
-    const r = document.createElement('div'); r.className = 'rk'; r.textContent = rk;
+  $('boardEmpty').hidden = list.length > 0;
+  list.forEach((r, i) => {
+    const li = document.createElement('li'); li.className = (r.kind === 'live' ? 'live' : 'done') + (r.id === uid ? ' me' : '');
+    const rk = document.createElement('div'); rk.className = 'rk'; rk.textContent = i + 1;
     const mid = document.createElement('div'); mid.style.minWidth = '0';
-    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = ((ps[id] && ps[id].name) || 'Someone') + (id === uid ? ' (you)' : '');
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = ((ps[r.id] && ps[r.id].name) || 'Someone') + (r.id === uid ? ' (you)' : '');
     mid.append(nm);
-    if (bar != null) { const m = document.createElement('div'); m.className = 'mini'; const i = document.createElement('i'); i.style.width = bar * 10 + '%'; m.append(i); mid.append(m); }
-    const tm = document.createElement('div'); tm.className = 'tm'; const b = document.createElement('b'); b.textContent = right; tm.append(b, document.createTextNode(sub));
-    li.append(r, mid, tm); ol.append(li);
-  };
-  done.slice(0, 60).forEach((d, i) => row(i + 1, d.id, d.bestArrows ? d.bestArrows + ' arrows' : '', fmtMs(d.bestMs), 'done'));
-  [...live.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).forEach(([id, h]) => row('·', id, h + '/10 heads', 'playing', 'live', h));
+    if (r.kind === 'live') { const m = document.createElement('div'); m.className = 'mini'; const bar = document.createElement('i'); bar.style.width = r.heads * 10 + '%'; m.append(bar); mid.append(m); }
+    const tm = document.createElement('div'); tm.className = 'tm'; const b = document.createElement('b');
+    b.textContent = r.kind === 'done' ? fmtMs(r.ms) : r.heads + '/10 heads';
+    tm.append(b, document.createTextNode(r.kind === 'done' ? (r.shots < 999 ? r.shots + ' arrows' : '') : r.kind === 'live' ? 'playing' : 'time up'));
+    li.append(rk, mid, tm); ol.append(li);
+  });
+  const mine = list.findIndex(r => r.id === uid), strip = $('myRank');
+  strip.hidden = mine < 0; if (mine >= 0) strip.textContent = 'You are #' + (mine + 1) + ' of ' + list.length;
+  if (winRankMode && mine >= 0) $('winBurns').textContent = '#' + (mine + 1);
 }
 async function renderWall() {
   const list = $('wall'); const docs = wallDocs.filter(d => d.vow || d.burns);
@@ -1159,7 +1260,7 @@ function react(kind, by) {
     if (A.ctx) { const t = A.ctx.currentTime; tone('sine', 98, 46, t, 0.38, 0.7); hiss(t, 0.06, 0.2, 'lowpass', 420); }
     sparks(BOW.x, GROUND - 40, 10, ['#f4a524', '#e8562a']); return;
   }
-  spawnPetals(RM ? 4 : 8); sfx.chime();
+  spawnPetals(RM ? 4 : 8); chant();
   if (by && user) user.profiles([by]).then(ps => floatText(((ps[by] && ps[by].name) || 'Someone') + ': Jai Shri Ram!', 200 + Math.random() * 560, 110 + Math.random() * 70, '#fff3c4'));
   else floatText('Jai Shri Ram!', 200 + Math.random() * 560, 110 + Math.random() * 70, '#fff3c4');
 }
@@ -1267,15 +1368,26 @@ document.querySelectorAll('[data-react]').forEach(b => b.addEventListener('click
 $('btnSolo').onclick = () => { cr.dismissed = true; exitCrowd(); };
 
 function restoreGame() {
+  const d = store.get('rd.done', null);
+  if (d && (d.kind === 'win' || d.kind === 'timeup') && Array.isArray(d.alive) && d.alive.length === 10) {
+    // this player already finished: show the final screen, no replay
+    finalRec = d; makeHeads(); newWind(); shots = d.shots | 0; endTime = performance.now(); startTime = endTime - d.ms;
+    heads.forEach((h, i) => {
+      if (d.kind === 'win' || !d.alive[i]) { h.alive = false; h.x = h.hx + Math.random() * 80 - 40; h.y = GROUND - h.r; h.vx = h.vy = h.vr = 0; h.rot = Math.random() * 2 - 1; }
+    });
+    if (d.kind === 'win') { state = 'done'; burnT = 14; } else state = 'over';
+    $('startOv').hidden = true; renderVices(); showOver(d.kind, d);
+    return true;
+  }
   const g = store.get('rd.game', null);
-  if (!g || !Array.isArray(g.alive) || g.alive.length !== 10 || Date.now() - g.at > 6 * 3600e3) return false;
+  if (!g ||!Array.isArray(g.alive) || g.alive.length !== 10 || Date.now() - g.at > 6 * 3600e3) return false;
   makeHeads(); newWind(); arrows = []; parts = []; rockets = []; floats = [];
   heads.forEach((h, i) => {
     if (g.alive[i]) return;
     h.alive = false; h.x = h.hx + Math.random() * 60 - 30; h.y = GROUND - h.r; h.vx = h.vy = h.vr = 0; h.rot = Math.random() * 2 - 1; h.downAt = performance.now();
   });
   shots = g.shots | 0; endTime = 0;
-  if (g.startWall) { startWall = g.startWall; startTime = performance.now() - (Date.now() - startWall); }
+  startWall = g.startWall || Date.now(); startTime = performance.now() - (Date.now() - startWall);
   state = heads.every(h => !h.alive) ? 'navel' : 'play';
   $('startOv').hidden = true; renderVices(); toast('Welcome back. Your game continues where you left it.', 3500);
   return true;
@@ -1283,10 +1395,10 @@ function restoreGame() {
 const resumed = restoreGame();
 (async () => {
   [db, user, room] = await Promise.all([use('db'), use('user'), use('room')]);
-  if (resumed) renderVices();
+  if (resumed && !finalRec) renderVices();
   if (user) {
     uid = await user.id();
-    if (await user.canEdit()) $('hostBox').hidden = false;
+    if (await user.canEdit()) { hostMode = true; $('hostBox').hidden = false; if (finalRec) $('btnAgain').hidden = false; }
   }
   if (room) {
     room.on('state', m => { if (!m.isMe) crowdState(m.data); }, () => {});
@@ -1319,6 +1431,17 @@ const resumed = restoreGame();
         if ((mine.burns || 0) > myBurns) { myBurns = mine.burns; store.set('rd.burns', myBurns); }
         if (mine.bestArrows && (myBest == null || mine.bestArrows < myBest)) myBest = mine.bestArrows;
         if (!vow && mine.vow) { vow = mine.vow; $('vowInput').value = vow; }
+      }
+      // the host started a new round: forget this browser's finished game and start fresh
+      const rnd = db.round ? db.round() : null;
+      if (finalRec && rnd != null && finalRec.round != null && finalRec.round !== rnd) {
+        store.set('rd.done', null); store.set('rd.game', null); location.reload(); return;
+      }
+      // a result recorded before the connection was ready (or lost) is sent now
+      if (finalRec && !finalSynced) {
+        finalSynced = true;
+        if (finalRec.round == null && rnd != null) { finalRec.round = rnd; store.set('rd.done', finalRec); }
+        if (!mine || (finalRec.kind === 'win' && !mine.bestMs) || (finalRec.kind === 'timeup' && mine.heads == null && !mine.bestMs)) saveMine(finalRec);
       }
       renderWall(); scheduleBoard();
     }, () => {});
